@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>⚡ ChargeOS - AI EV Scheduling Kernel</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+body{background:#0f2027;color:white;text-align:center;font-family:Arial}
+.card{background:#1e1e1e;padding:15px;margin:10px;display:inline-block;border-radius:10px;width:180px}
+button{padding:10px 20px;background:#00e676;border:none;color:white;border-radius:5px;margin:5px;cursor:pointer}
+.status-charging{color:orange}
+.status-available{color:#00e676}
+.panel{margin-top:15px}
+</style>
+</head>
+
+<body>
+
+<h1>⚡ ChargeOS – AI Microkernel EV Scheduler</h1>
+
+<button onclick="allocate()">Allocate EV</button>
+<button onclick="toggleRenewable()">Toggle Renewable Mode</button>
+
+<h3 id="msg"></h3>
+
+<div class="panel">
+Predicted Demand: <span id="prediction">1</span> |
+Grid Load: <span id="grid">Stable</span> |
+Dynamic Price: ₹<span id="price">10</span>/unit |
+Carbon Saved: <span id="carbon">0</span> kg
+</div>
+
+<div id="evs"></div>
+<canvas id="chart" width="700" height="300"></canvas>
+
+<script>
+
+// ---------------- OS RESOURCE CONFIG ----------------
+
+let totalSlots = 2;        // CPU cores analogy
+let occupied = 0;          // Running processes
+let renewableMode = false;
+let carbonSaved = 0;
+
+let basePrice = 10;
+
+// ---------------- EV PROCESSES ----------------
+
+let evs = [
+ {name:"EV-A1", battery:75, status:"available", wait:0},
+ {name:"EV-B2", battery:30, status:"available", wait:0},
+ {name:"EV-C3", battery:20, status:"available", wait:0},
+ {name:"EV-D4", battery:55, status:"available", wait:0}
+];
+
+let demandHistory=[];
+let chart;
+
+// ---------------- AI DEMAND ----------------
+
+function predictDemand(){
+ if(demandHistory.length < 3) return 1;
+ let avg = demandHistory.reduce((a,b)=>a+b,0)/demandHistory.length;
+ return Math.round(avg);
+}
+
+// ---------------- DYNAMIC PRICING ----------------
+
+function calculatePrice(predicted){
+ let peakMultiplier = occupied>=totalSlots ? 5 : 0;
+ let demandSurge = predicted*2;
+ let renewableDiscount = renewableMode ? -3 : 0;
+ return basePrice + peakMultiplier + demandSurge + renewableDiscount;
+}
+
+// ---------------- AOA PRIORITY SCHEDULER ----------------
+
+function allocate(){
+
+ if(occupied>=totalSlots){
+   document.getElementById("msg").innerText="System in Safe State: No Slot Available";
+   return;
+ }
+
+ let predicted = predictDemand();
+ document.getElementById("prediction").innerText=predicted;
+
+ let available = evs.filter(e=>e.status==="available");
+
+ if(available.length===0){
+   document.getElementById("msg").innerText="No EV Available";
+   return;
+ }
+
+ // Multi-factor Priority Score (AOA)
+ available.forEach(ev=>{
+   let batteryCritical = 100-ev.battery;
+   let waitingBoost = ev.wait*2;
+   let peakPenalty = occupied>=totalSlots?10:0;
+   let renewableFactor = renewableMode? -5:0;
+
+   ev.score = batteryCritical + waitingBoost + predicted*5 + peakPenalty + renewableFactor;
+ });
+
+ available.sort((a,b)=>a.score-b.score);
+
+ let selected = available[0];
+
+ selected.status="charging";
+ selected.wait=0;
+ occupied++;
+
+ demandHistory.push(occupied);
+
+ document.getElementById("msg").innerText=selected.name+" Scheduled (Priority Based)";
+ updateUI();
+}
+
+// ---------------- CHARGING LOOP ----------------
+
+function chargingLoop(){
+
+ evs.forEach(ev=>{
+   if(ev.status==="charging"){
+
+     let speed = renewableMode?5:3;
+     ev.battery+=Math.floor(Math.random()*speed)+2;
+
+     carbonSaved+=0.05;
+
+     if(ev.battery>=100){
+       ev.battery=100;
+       ev.status="available";
+       occupied--;
+     }
+   }
+   else{
+     ev.wait++;
+   }
+ });
+
+ updateUI();
+}
+
+setInterval(chargingLoop,3000);
+
+// ---------------- RENEWABLE MODE ----------------
+
+function toggleRenewable(){
+ renewableMode=!renewableMode;
+}
+
+// ---------------- UI UPDATE ----------------
+
+function updateUI(){
+
+ let predicted=predictDemand();
+ let price=calculatePrice(predicted);
+
+ document.getElementById("price").innerText=price;
+ document.getElementById("carbon").innerText=carbonSaved.toFixed(2);
+
+ document.getElementById("grid").innerText=
+  occupied>=totalSlots?"High Load":"Stable";
+
+ let html="";
+ let labels=[];
+ let batteryData=[];
+
+ evs.forEach(ev=>{
+   let cls=ev.status==="charging"?"status-charging":"status-available";
+
+   html+=`<div class="card">
+     <h3>${ev.name}</h3>
+     <p class="${cls}">${ev.status}</p>
+     <p>${ev.battery}%</p>
+     <p>Wait: ${ev.wait}</p>
+   </div>`;
+
+   labels.push(ev.name);
+   batteryData.push(ev.battery);
+ });
+
+ document.getElementById("evs").innerHTML=html;
+
+ if(chart) chart.destroy();
+
+ chart=new Chart(document.getElementById("chart"),{
+   type:"bar",
+   data:{
+     labels:labels,
+     datasets:[{label:"Battery %",data:batteryData}]
+   }
+ });
+}
+
+updateUI();
+
+</script>
+</body>
+</html>

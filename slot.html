@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart EV Scheduler - AOA + OS</title>
+
+<style>
+body{
+    background:#0b1420;
+    color:#e0f0ff;
+    font-family:Segoe UI;
+    text-align:center;
+}
+h1{color:#00c8ff}
+button{
+    padding:10px 20px;
+    margin:10px;
+    background:#0056ff;
+    border:none;
+    color:white;
+    border-radius:6px;
+    cursor:pointer;
+}
+button:hover{opacity:.8}
+.container{display:flex;justify-content:center;gap:30px;margin-top:20px}
+.card{
+    background:#132235;
+    padding:20px;
+    border-radius:10px;
+    width:220px;
+}
+.slot{
+    background:#1f3b55;
+    padding:15px;
+    margin:10px 0;
+    border-radius:8px;
+}
+.busy{background:#ff3d57}
+.free{background:#00e676}
+.metrics{
+    background:#020d1a;
+    padding:20px;
+    border-radius:10px;
+    text-align:left;
+    width:300px;
+}
+</style>
+</head>
+
+<body>
+
+<h1>⚡ Smart EV Scheduler (AOA + OS)</h1>
+
+<button onclick="startSimulation()">Start Simulation</button>
+<button onclick="stopSimulation()">Stop</button>
+
+<div class="container">
+
+<div class="card">
+<h3>Charging Slots</h3>
+<div id="slots"></div>
+</div>
+
+<div class="metrics">
+<h3>System Metrics</h3>
+<pre id="metrics"></pre>
+</div>
+
+</div>
+
+<script>
+
+const TOTAL_SLOTS = 4;
+let simulation = null;
+
+let completedEVs = 0;
+let totalWaitingTime = 0;
+let totalTurnaround = 0;
+let starvationCount = 0;
+let startTime = Date.now();
+
+let slots = Array.from({length:TOTAL_SLOTS},(_,i)=>({
+    id:i+1,
+    busy:false,
+    vehicle:null,
+    timeLeft:0
+}));
+
+// -------------------- MIN HEAP --------------------
+
+class MinHeap{
+constructor(){this.heap=[];}
+
+insert(node){
+    this.heap.push(node);
+    this.heap.sort((a,b)=>a.priority-b.priority);
+}
+
+extractMin(){
+    return this.heap.shift();
+}
+
+size(){return this.heap.length;}
+getAll(){return this.heap;}
+}
+
+let pq = new MinHeap();
+
+// -------------------- EV GENERATION --------------------
+
+function generateEV(){
+let battery=Math.floor(Math.random()*90);
+let chargingTime=Math.ceil((100-battery)/10);
+
+pq.insert({
+    id:"EV"+Math.floor(Math.random()*1000),
+    battery:battery,
+    priority:battery,
+    arrival:Date.now(),
+    chargingTime:chargingTime
+});
+}
+
+// -------------------- ALLOCATION --------------------
+
+function allocate(){
+if(pq.size()==0) return;
+
+let freeSlot = slots.find(s=>!s.busy);
+if(!freeSlot) return;
+
+let ev = pq.extractMin();
+
+let waiting = (Date.now()-ev.arrival)/1000;
+totalWaitingTime += waiting;
+
+freeSlot.busy = true;
+freeSlot.vehicle = ev;
+freeSlot.timeLeft = ev.chargingTime;
+}
+
+// -------------------- MAIN CYCLE --------------------
+
+function cycle(){
+
+// Aging + starvation detection
+pq.getAll().forEach(ev=>{
+    ev.priority -= 1;
+    let waiting=(Date.now()-ev.arrival)/1000;
+    if(waiting>15) starvationCount++;
+});
+
+if(Math.random()<0.7) generateEV();
+
+allocate();
+
+slots.forEach(s=>{
+if(s.busy){
+    s.timeLeft--;
+    if(s.timeLeft<=0){
+        completedEVs++;
+        let turnaround=(Date.now()-s.vehicle.arrival)/1000;
+        totalTurnaround+=turnaround;
+
+        s.busy=false;
+        s.vehicle=null;
+    }
+}
+});
+
+render();
+}
+
+// -------------------- RENDER --------------------
+
+function render(){
+
+let slotHTML="";
+let busyCount=0;
+
+slots.forEach(s=>{
+if(s.busy){
+busyCount++;
+slotHTML+=`<div class="slot busy">
+Slot ${s.id}<br>
+${s.vehicle.id}<br>
+Time: ${s.timeLeft}
+</div>`;
+}else{
+slotHTML+=`<div class="slot free">
+Slot ${s.id}<br>
+Free
+</div>`;
+}
+});
+
+document.getElementById("slots").innerHTML=slotHTML;
+
+let utilization=((busyCount/TOTAL_SLOTS)*100).toFixed(2);
+let avgWaiting=(completedEVs? (totalWaitingTime/completedEVs).toFixed(2):0);
+let avgTurnaround=(completedEVs? (totalTurnaround/completedEVs).toFixed(2):0);
+let runtime=(Date.now()-startTime)/60000;
+let throughput=(runtime? (completedEVs/runtime).toFixed(2):0);
+
+document.getElementById("metrics").innerText=
+`Completed EVs: ${completedEVs}
+Queue Size: ${pq.size()}
+Utilization: ${utilization} %
+
+Average Waiting Time: ${avgWaiting} sec
+Average Turnaround Time: ${avgTurnaround} sec
+Throughput: ${throughput} EV/min
+Starvation Events: ${starvationCount}
+
+AOA: Min-Heap + Aging
+OS: Resource Allocation + Scheduling`;
+}
+
+// -------------------- CONTROL --------------------
+
+function startSimulation(){
+if(simulation) return;
+simulation=setInterval(cycle,1000);
+}
+
+function stopSimulation(){
+clearInterval(simulation);
+simulation=null;
+}
+
+render();
+
+</script>
+
+</body>
+</html>
