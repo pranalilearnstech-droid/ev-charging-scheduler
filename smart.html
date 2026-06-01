@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Smart EV Real-Time Scheduler (AOA + OS)</title>
+<style>
+body{margin:0;font-family:Arial;background:#0b1220;color:#e6f2ff}
+header{background:#111c33;padding:15px 25px;font-weight:bold}
+section{padding:20px}
+.card{background:#121e33;padding:20px;border-radius:10px;margin-bottom:20px}
+button{padding:8px 14px;background:#0066ff;border:none;border-radius:6px;color:white;cursor:pointer;margin-right:5px}
+button:hover{opacity:.8}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.slot{padding:15px;border-radius:8px;text-align:center;font-weight:bold}
+.free{background:#0f5132}
+.busy{background:#7f1d1d}
+.queue-box{background:#020d1a;padding:15px;border-radius:8px;min-height:120px;font-family:monospace}
+.metric{margin-bottom:8px}
+.bar{height:10px;background:#444;border-radius:5px;overflow:hidden}
+.fill{height:100%;background:#00e676}
+</style>
+</head>
+<body>
+
+<header>⚡ Smart EV Real-Time Scheduler (AOA + OS)</header>
+
+<section>
+
+<div class="card">
+<button onclick="startSim()">Start Simulation</button>
+<button onclick="stopSim()">Stop</button>
+</div>
+
+<div class="card">
+<h3>Charging Slots</h3>
+<div id="slots" class="grid"></div>
+</div>
+
+<div class="card">
+<h3>Priority Queue (Min-Heap)</h3>
+<div id="queue" class="queue-box"></div>
+</div>
+
+<div class="card">
+<h3>System Metrics</h3>
+<div class="metric">Total Allocations: <span id="alloc">0</span></div>
+<div class="metric">Queue Size: <span id="qsize">0</span></div>
+<div class="metric">Utilization</div>
+<div class="bar"><div id="utilFill" class="fill" style="width:0%"></div></div>
+</div>
+
+</section>
+
+<script>
+
+const TOTAL_SLOTS=4;
+let totalAlloc=0;
+let sim=null;
+
+// SLOT MODEL
+let slots=Array.from({length:TOTAL_SLOTS},(_,i)=>({
+id:i+1,
+busy:false,
+vehicle:null,
+timeLeft:0,
+energyLoad:0
+}));
+
+// MIN HEAP
+class MinHeap{
+constructor(){this.heap=[];}
+insert(n){this.heap.push(n);this.up();}
+up(){
+let i=this.heap.length-1;
+while(i>0){
+let p=Math.floor((i-1)/2);
+if(this.heap[p].priority<=this.heap[i].priority)break;
+[this.heap[p],this.heap[i]]=[this.heap[i],this.heap[p]];
+i=p;
+}}
+extractMin(){
+if(this.heap.length===1)return this.heap.pop();
+let min=this.heap[0];
+this.heap[0]=this.heap.pop();
+this.down();
+return min;
+}
+down(){
+let i=0,l=this.heap.length;
+while(true){
+let left=2*i+1,right=2*i+2,small=i;
+if(left<l&&this.heap[left].priority<this.heap[small].priority)small=left;
+if(right<l&&this.heap[right].priority<this.heap[small].priority)small=right;
+if(small===i)break;
+[this.heap[i],this.heap[small]]=[this.heap[small],this.heap[i]];
+i=small;
+}}
+size(){return this.heap.length;}
+getAll(){return this.heap;}
+}
+
+let pq=new MinHeap();
+
+// EV GENERATOR
+function generateEV(){
+let id="EV"+Math.floor(Math.random()*1000);
+let battery=Math.floor(Math.random()*90);
+let priority=battery - pq.size(); // Aging base
+pq.insert({id,battery,priority});
+}
+
+// SAFE CHECK (Banker Inspired)
+function isSafe(){
+return slots.some(s=>!s.busy);
+}
+
+// ENERGY OPTIMIZED ALLOCATION
+function allocate(){
+if(pq.size()===0||!isSafe())return;
+
+let ev=pq.extractMin();
+
+// Choose lowest energy load slot
+let freeSlots=slots.filter(s=>!s.busy);
+freeSlots.sort((a,b)=>a.energyLoad-b.energyLoad);
+let slot=freeSlots[0];
+
+slot.busy=true;
+slot.vehicle=ev;
+slot.timeLeft=Math.ceil((100-ev.battery)/10);
+slot.energyLoad+=slot.timeLeft;
+
+totalAlloc++;
+}
+
+// REAL TIME CYCLE
+function cycle(){
+
+// Aging
+pq.getAll().forEach(ev=>ev.priority--);
+
+// Random EV arrival
+if(Math.random()<0.6) generateEV();
+
+// Allocate
+allocate();
+
+// Update charging
+slots.forEach(s=>{
+if(s.busy){
+s.timeLeft--;
+if(s.timeLeft<=0){
+s.busy=false;
+s.vehicle=null;
+s.energyLoad=Math.max(0,s.energyLoad-5);
+}}
+});
+
+render();
+}
+
+// RENDER
+function render(){
+
+let html="";
+let busyCount=0;
+
+slots.forEach(s=>{
+if(s.busy){
+busyCount++;
+html+=`<div class="slot busy">
+Slot ${s.id}<br>
+${s.vehicle.id}<br>
+Time:${s.timeLeft}
+</div>`;
+}else{
+html+=`<div class="slot free">
+Slot ${s.id}<br>Free
+</div>`;
+}
+});
+document.getElementById("slots").innerHTML=html;
+
+// Queue
+let text="";
+pq.getAll().forEach(ev=>{
+text+=`${ev.id} | Battery:${ev.battery}% | P:${ev.priority}\n`;
+});
+document.getElementById("queue").innerText=text||"Queue Empty";
+
+// Metrics
+document.getElementById("alloc").innerText=totalAlloc;
+document.getElementById("qsize").innerText=pq.size();
+let util=(busyCount/TOTAL_SLOTS)*100;
+document.getElementById("utilFill").style.width=util+"%";
+}
+
+// CONTROL
+function startSim(){
+if(sim)return;
+sim=setInterval(cycle,2000);
+}
+
+function stopSim(){
+clearInterval(sim);
+sim=null;
+}
+
+render();
+
+</script>
+</body>
+</html>
