@@ -36,7 +36,7 @@ ev-charging-scheduler/
 
 🚀 Getting Started
 1. Clone the repository
-git clone https://github.com/Pranali2006/ev-charging-scheduler.git
+git clone https://github.com/Pranali-2006/ev-charging-scheduler.git
 2. Open index.html in your browser to view the
 interface
 3. Run the Python scheduling logic:
