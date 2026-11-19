@@ -34,6 +34,8 @@ ev-charging-scheduler/
 ├── LICENSE
 └── README.md
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-Open_Project-2563EB?style=for-the-badge&logo=github)](https://pranalilearnstech-droid.github.io/ev-charging-scheduler/)
+
 🚀 Getting Started
 1. Clone the repository
 git clone https://github.com/Pranali-2006/ev-charging-scheduler
