@@ -52,3 +52,4 @@ Integration with live EV data/APIs
 📄 License
 This project is licensed under the MIT License — see
 the LICENSE file for details.
+🔗 **Live Demo:** [https://pranalilearnstech-droid.github.io/ev-charging-scheduler/](https://pranalilearnstech-droid.github.io/ev-charging-scheduler/)
